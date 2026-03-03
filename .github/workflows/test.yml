@@ -1,0 +1,58 @@
+name: test
+on: [push, pull_request]
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        perl: ['5.26', '5.30', '5.34', '5.38', '5.40']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl }}
+      - run: sudo apt-get update && sudo apt-get install -y cmake libpugixml-dev
+      - run: cpanm -nq Alien::Build Alien::Build::Plugin::Build::CMake Test::Alien Alien::cmake3 URI Sort::Versions Mojo::DOM58
+      - name: system install
+        run: perl Makefile.PL && make && make test
+      - name: share install
+        env:
+          ALIEN_INSTALL_TYPE: share
+        run: make realclean && perl Makefile.PL && make && make test
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        perl: ['5.34', '5.38', '5.40']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl }}
+      - run: brew install cmake pugixml
+      - run: cpanm -nq Alien::Build Alien::Build::Plugin::Build::CMake Test::Alien Alien::cmake3 URI Sort::Versions Mojo::DOM58
+      - name: system install
+        run: perl Makefile.PL && make && make test
+      - name: share install
+        env:
+          ALIEN_INSTALL_TYPE: share
+        run: make realclean && perl Makefile.PL && make && make test
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y perl5 gmake pkgconf cmake pugixml openssl
+            pkg install -y p5-App-cpanminus p5-Net-SSLeay p5-IO-Socket-SSL p5-Mozilla-CA
+            cpanm -nq Alien::Build Alien::Build::Plugin::Build::CMake Test::Alien Alien::cmake3 URI Sort::Versions Mojo::DOM58
+          run: |
+            perl Makefile.PL && gmake && gmake test
+            gmake realclean
+            ALIEN_INSTALL_TYPE=share perl Makefile.PL && gmake && gmake test
