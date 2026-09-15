@@ -8,12 +8,12 @@ jobs:
       matrix:
         perl: ['5.26', '5.30', '5.34', '5.38', '5.40']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: ${{ matrix.perl }}
-      - run: sudo apt-get update && sudo apt-get install -y cmake libpugixml-dev
-      - run: cpanm -nq Alien::Build Alien::Build::Plugin::Build::CMake Test::Alien Alien::cmake3 URI Sort::Versions Mojo::DOM58
+      - run: sudo apt-get update && sudo apt-get install -y libpugixml-dev
+      - run: cpanm -nq Alien::Build Test::Alien ExtUtils::CBuilder URI Sort::Versions Mojo::DOM58
       - name: system install
         run: perl Makefile.PL && make && make test
       - name: share install
@@ -28,12 +28,12 @@ jobs:
       matrix:
         perl: ['5.34', '5.38', '5.40']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: ${{ matrix.perl }}
-      - run: brew install cmake pugixml
-      - run: cpanm -nq Alien::Build Alien::Build::Plugin::Build::CMake Test::Alien Alien::cmake3 URI Sort::Versions Mojo::DOM58
+      - run: brew install pugixml
+      - run: cpanm -nq Alien::Build Test::Alien ExtUtils::CBuilder URI Sort::Versions Mojo::DOM58
       - name: system install
         run: perl Makefile.PL && make && make test
       - name: share install
@@ -41,18 +41,54 @@ jobs:
           ALIEN_INSTALL_TYPE: share
         run: make realclean && perl Makefile.PL && make && make test
 
+  no-system-pugixml:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+      - name: shadow cmake with a stub that fails
+        run: |
+          mkdir -p "$HOME/nocmake"
+          printf '#!/bin/sh\necho "cmake must not be used" >&2\nexit 1\n' > "$HOME/nocmake/cmake"
+          chmod +x "$HOME/nocmake/cmake"
+          echo "$HOME/nocmake" >> "$GITHUB_PATH"
+      - run: "! pkg-config --exists pugixml"
+      - run: cpanm -nq Alien::Build Test::Alien ExtUtils::CBuilder URI Sort::Versions Mojo::DOM58
+      - run: perl Makefile.PL && make && make test && make install
+      - run: perl -MAlien::pugixml -e 'Alien::pugixml->install_type eq "share" or die "not a share install\n"'
+      - name: XML::PugiXML against the share install
+        run: cpanm -v --test-only XML::PugiXML
+
   freebsd:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
           prepare: |
-            pkg install -y perl5 gmake pkgconf cmake pugixml openssl
+            pkg install -y perl5 gmake pkgconf pugixml openssl
             pkg install -y p5-App-cpanminus p5-Net-SSLeay p5-IO-Socket-SSL p5-Mozilla-CA
-            cpanm -nq Alien::Build Alien::Build::Plugin::Build::CMake Test::Alien Alien::cmake3 URI Sort::Versions Mojo::DOM58
+            cpanm -nq Alien::Build Test::Alien ExtUtils::CBuilder URI Sort::Versions Mojo::DOM58
           run: |
-            perl Makefile.PL && gmake && gmake test
+            set -e
+            mkdir -p /tmp/nocmake
+            printf '#!/bin/sh\nexit 1\n' > /tmp/nocmake/cmake
+            chmod +x /tmp/nocmake/cmake
+            PATH=/tmp/nocmake:$PATH
+            export PATH
+            perl Makefile.PL
+            gmake
+            gmake test
             gmake realclean
-            ALIEN_INSTALL_TYPE=share perl Makefile.PL && gmake && gmake test
+            ALIEN_INSTALL_TYPE=share perl Makefile.PL
+            gmake
+            gmake test
+            gmake install
+            cpanm -v --test-only XML::PugiXML
